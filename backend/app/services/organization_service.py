@@ -103,6 +103,46 @@ def get_user_organization(
         )
     )
     
+def get_organization_members(
+    db: Session,
+    user_id: int,
+    organization_id: int,
+) -> list[dict]:
+    organization = get_user_organization(
+        db=db,
+        user_id=user_id,
+        organization_id=organization_id,
+    )
+
+    if organization is None:
+        return []
+
+    members = db.execute(
+        select(
+            User.id.label("user_id"),
+            User.email,
+            User.full_name,
+            Role.name.label("role"),
+            OrganizationMember.is_active,
+            OrganizationMember.joined_at,
+        )
+        .join(
+            OrganizationMember,
+            OrganizationMember.user_id == User.id,
+        )
+        .join(
+            Role,
+            Role.id == OrganizationMember.role_id,
+        )
+        .where(
+            OrganizationMember.organization_id == organization_id,
+            OrganizationMember.is_active.is_(True),
+        )
+        .order_by(User.full_name)
+    ).mappings().all()
+
+    return [dict(member) for member in members]
+    
 def update_organization(
     db: Session,
     user_id: int,
@@ -129,6 +169,118 @@ def update_organization(
     db.refresh(organization)
 
     return organization
+
+def add_organization_member(
+    db: Session,
+    organization_id: int,
+    user_id: int,
+    role_id: int,
+) -> OrganizationMember:
+    organization = db.scalar(
+        select(Organization).where(
+            Organization.id == organization_id,
+            Organization.is_active.is_(True),
+        )
+    )
+
+    if organization is None:
+        raise ValueError("ORGANIZATION_NOT_FOUND")
+
+    user = db.scalar(
+        select(User).where(
+            User.id == user_id,
+            User.is_active.is_(True),
+        )
+    )
+
+    if user is None:
+        raise ValueError("USER_NOT_FOUND")
+
+    role = db.scalar(
+        select(Role).where(Role.id == role_id)
+    )
+
+    if role is None:
+        raise ValueError("ROLE_NOT_FOUND")
+
+    existing_member = db.scalar(
+        select(OrganizationMember).where(
+            OrganizationMember.organization_id == organization_id,
+            OrganizationMember.user_id == user_id,
+        )
+    )
+
+    if existing_member is not None:
+        if existing_member.is_active:
+            raise ValueError("USER_ALREADY_MEMBER")
+
+        existing_member.role_id = role_id
+        existing_member.is_active = True
+
+        try:
+            db.commit()
+        except Exception:
+            db.rollback()
+            raise
+
+        db.refresh(existing_member)
+        return existing_member
+
+    membership = OrganizationMember(
+        organization_id=organization_id,
+        user_id=user_id,
+        role_id=role_id,
+        is_active=True,
+    )
+
+    db.add(membership)
+
+    try:
+        db.commit()
+    except Exception:
+        db.rollback()
+        raise
+
+    db.refresh(membership)
+
+    return membership
+
+def update_organization_member(
+    db: Session,
+    organization_id: int,
+    user_id: int,
+    role_id: int,
+    is_active: bool,
+) -> OrganizationMember:
+    membership = db.scalar(
+        select(OrganizationMember).where(
+            OrganizationMember.organization_id == organization_id,
+            OrganizationMember.user_id == user_id,
+        )
+    )
+
+    if membership is None:
+        raise ValueError("MEMBER_NOT_FOUND")
+
+    role = db.scalar(
+        select(Role).where(Role.id == role_id)
+    )
+
+    if role is None:
+        raise ValueError("ROLE_NOT_FOUND")
+
+    membership.role_id = role_id
+    membership.is_active = is_active
+
+    try:
+        db.commit()
+    except Exception:
+        db.rollback()
+        raise
+
+    db.refresh(membership)
+
+    return membership
 
 
 def _generate_unique_slug(
@@ -171,4 +323,32 @@ def _slugify(value: str) -> str:
         slug = slug.replace("--", "-")
 
     return slug.strip("-")
+
+def remove_organization_member(
+    db: Session,
+    organization_id: int,
+    user_id: int,
+) -> OrganizationMember:
+    membership = db.scalar(
+        select(OrganizationMember).where(
+            OrganizationMember.organization_id == organization_id,
+            OrganizationMember.user_id == user_id,
+            OrganizationMember.is_active.is_(True),
+        )
+    )
+
+    if membership is None:
+        raise ValueError("MEMBER_NOT_FOUND")
+
+    membership.is_active = False
+
+    try:
+        db.commit()
+    except Exception:
+        db.rollback()
+        raise
+
+    db.refresh(membership)
+
+    return membership
 
