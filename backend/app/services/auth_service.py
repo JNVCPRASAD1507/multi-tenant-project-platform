@@ -18,6 +18,8 @@ from app.models.user import User
 from app.schemas.auth import RegisterRequest
 from app.models.refresh_token import RefreshToken
 
+from datetime import datetime, timezone
+
 
 def register_user(
     db: Session,
@@ -237,5 +239,122 @@ def login_user(
         access_token,
         refresh_token,
     )
+    
+def refresh_access_token(
+    db: Session,
+    refresh_token: str,
+) -> tuple[str, str]:
+    token_hash = hash_refresh_token(refresh_token)
+
+    stored_token = db.scalar(
+        select(RefreshToken).where(
+            RefreshToken.token_hash == token_hash
+        )
+    )
+
+    if stored_token is None:
+        raise ValueError("Invalid refresh token.")
+
+    if stored_token.revoked_at is not None:
+        raise ValueError("Refresh token has been revoked.")
+
+    if stored_token.expires_at <= datetime.now(timezone.utc):
+        raise ValueError("Refresh token has expired.")
+
+    user = db.scalar(
+        select(User).where(
+            User.id == stored_token.user_id
+        )
+    )
+
+    if user is None:
+        raise ValueError("User no longer exists.")
+
+    if not user.is_active:
+        raise PermissionError("Your account is inactive.")
+
+    membership = db.scalar(
+        select(OrganizationMember).where(
+            OrganizationMember.user_id == user.id,
+            OrganizationMember.is_active.is_(True),
+        )
+    )
+
+    if membership is None:
+        raise PermissionError(
+            "You are not an active organization member."
+        )
+
+    organization = db.scalar(
+        select(Organization).where(
+            Organization.id == membership.organization_id,
+            Organization.is_active.is_(True),
+        )
+    )
+
+    if organization is None:
+        raise PermissionError(
+            "Your organization is inactive."
+        )
+
+    role = db.scalar(
+        select(Role).where(
+            Role.id == membership.role_id
+        )
+    )
+
+    if role is None:
+        raise RuntimeError(
+            "User role is not configured correctly."
+        )
+
+    # Create new access JWT
+    access_token = create_access_token(
+        user_id=user.id,
+        organization_id=organization.id,
+        role=role.name,
+    )
+
+    # Rotate refresh token
+    new_refresh_token = create_refresh_token()
+
+    stored_token.revoked_at = datetime.now(timezone.utc)
+
+    new_refresh_token_record = RefreshToken(
+        user_id=user.id,
+        token_hash=hash_refresh_token(
+            new_refresh_token
+        ),
+        expires_at=get_refresh_token_expiry(),
+    )
+
+    db.add(new_refresh_token_record)
+    db.commit()
+
+    return access_token, new_refresh_token
+
+#=========================================================================
+
+def logout_user(
+    db: Session,
+    refresh_token: str,
+) -> None:
+    token_hash = hash_refresh_token(refresh_token)
+
+    stored_token = db.scalar(
+        select(RefreshToken).where(
+            RefreshToken.token_hash == token_hash
+        )
+    )
+
+    if stored_token is None:
+        raise ValueError("Invalid refresh token.")
+
+    if stored_token.revoked_at is not None:
+        return
+
+    stored_token.revoked_at = datetime.now(timezone.utc)
+
+    db.commit()
     
     

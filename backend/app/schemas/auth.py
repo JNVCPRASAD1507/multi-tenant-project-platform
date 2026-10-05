@@ -45,4 +45,8 @@ class LoginResponse(BaseModel):
     role: str
     tokens: TokenResponse
     
+class RefreshTokenRequest(BaseModel):
+    refresh_token: str = Field(min_length=1)
+    
+    
     

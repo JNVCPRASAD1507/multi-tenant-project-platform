@@ -2,16 +2,20 @@
 from fastapi import APIRouter, Depends, HTTPException, status
 from sqlalchemy.orm import Session
 
+from app.api.deps import get_current_user
+from app.models.user import User
+
 from app.db.session import get_db
 from app.schemas.auth import (
     LoginRequest,
     LoginResponse,
+    RefreshTokenRequest,
     RegisterRequest,
     RegisterResponse,
     TokenResponse,
     UserResponse,
 )
-from app.services.auth_service import login_user, register_user
+from app.services.auth_service import login_user, refresh_access_token, register_user, logout_user
 from app.core.config import settings
 
 
@@ -124,6 +128,92 @@ def login(
             expires_in=settings.ACCESS_TOKEN_EXPIRE_MINUTES * 60,
         ),
     )
+    
+#===============================================================
+
+@router.get(
+    "/me",
+    response_model=UserResponse,
+)
+def get_me(
+    current_user: User = Depends(get_current_user),
+):
+    return current_user
+    
+    
+#===============================================================
+
+@router.post(
+    "/refresh",
+    response_model=TokenResponse,
+)
+def refresh_token(
+    data: RefreshTokenRequest,
+    db: Session = Depends(get_db),
+):
+    try:
+        access_token, new_refresh_token = refresh_access_token(
+            db=db,
+            refresh_token=data.refresh_token,
+        )
+
+    except ValueError as exc:
+        raise HTTPException(
+            status_code=status.HTTP_401_UNAUTHORIZED,
+            detail={
+                "code": "INVALID_REFRESH_TOKEN",
+                "message": str(exc),
+            },
+        )
+
+    except PermissionError as exc:
+        raise HTTPException(
+            status_code=status.HTTP_403_FORBIDDEN,
+            detail={
+                "code": "REFRESH_NOT_ALLOWED",
+                "message": str(exc),
+            },
+        )
+
+    except RuntimeError as exc:
+        raise HTTPException(
+            status_code=status.HTTP_500_INTERNAL_SERVER_ERROR,
+            detail={
+                "code": "REFRESH_CONFIGURATION_ERROR",
+                "message": str(exc),
+            },
+        )
+
+    return TokenResponse(
+        access_token=access_token,
+        refresh_token=new_refresh_token,
+        expires_in=settings.ACCESS_TOKEN_EXPIRE_MINUTES * 60,
+    )
+    
+
+@router.post("/logout")
+def logout(
+    data: RefreshTokenRequest,
+    db: Session = Depends(get_db),
+):
+    try:
+        logout_user(
+            db=db,
+            refresh_token=data.refresh_token,
+        )
+
+    except ValueError as exc:
+        raise HTTPException(
+            status_code=status.HTTP_401_UNAUTHORIZED,
+            detail={
+                "code": "INVALID_REFRESH_TOKEN",
+                "message": str(exc),
+            },
+        )
+
+    return {
+        "message": "Logout successful."
+    }
     
     
     
