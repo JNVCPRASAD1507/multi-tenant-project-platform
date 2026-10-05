@@ -7,6 +7,7 @@ from app.db.session import engine
 from app.api.v1.auth import router as auth_router
 from app.api.v1.organizations import router as organizations_router
 from app.api.v1.members import router as members_router
+from app.api.v1.projects import router as projects_router
 
 
 app = FastAPI(
@@ -17,6 +18,7 @@ app = FastAPI(
 app.include_router(auth_router, prefix="/api/v1")
 app.include_router(organizations_router, prefix="/api/v1")
 app.include_router(members_router, prefix="/api/v1")
+app.include_router(projects_router, prefix="/api/v1")
 
 
 @app.get("/health")

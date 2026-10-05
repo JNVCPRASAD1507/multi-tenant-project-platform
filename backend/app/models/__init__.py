@@ -5,6 +5,7 @@ from app.models.organization import Organization
 from app.models.organization_member import OrganizationMember
 from app.models.oauth_account import OAuthAccount
 from app.models.refresh_token import RefreshToken
+from app.models.project import Project
 
 __all__ = [
     "User",
@@ -13,5 +14,6 @@ __all__ = [
     "OrganizationMember",
     "OAuthAccount",
     "RefreshToken",
+    "Project",
 ]
 
