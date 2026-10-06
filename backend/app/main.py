@@ -7,6 +7,8 @@ from app.api.v1.auth import router as auth_router
 from app.api.v1.organizations import router as organizations_router
 from app.api.v1.members import router as members_router
 from app.api.v1.projects import router as projects_router
+from app.api.v1.tasks import router as tasks_router
+from app.api.v1.ws import router as ws_router
 
 
 app = FastAPI(
@@ -14,7 +16,6 @@ app = FastAPI(
     version=settings.APP_VERSION,
 )
 
-# CORS – allow React frontend
 app.add_middleware(
     CORSMiddleware,
     allow_origins=[
@@ -31,6 +32,8 @@ app.include_router(auth_router, prefix="/api/v1")
 app.include_router(organizations_router, prefix="/api/v1")
 app.include_router(members_router, prefix="/api/v1")
 app.include_router(projects_router, prefix="/api/v1")
+app.include_router(tasks_router, prefix="/api/v1")
+app.include_router(ws_router, prefix="/api/v1")
 
 
 @app.get("/health")
@@ -39,3 +42,4 @@ def health_check():
         "status": "ok",
         "application": settings.APP_NAME,
     }
+    
