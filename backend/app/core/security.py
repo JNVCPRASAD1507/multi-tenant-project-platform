@@ -82,6 +82,7 @@ import secrets
 from datetime import datetime, timedelta, timezone
 
 import jwt
+import hmac
 
 from app.core.config import settings
 
@@ -118,7 +119,8 @@ def verify_password(password: str, hashed_password: str) -> bool:
             salt,
             iterations_value,
         )
-        return hashlib.compare_digest(actual_digest, expected_digest)
+        # return hashlib.compare_digest(actual_digest, expected_digest)
+        return hmac.compare_digest(actual_digest, expected_digest)
     except (ValueError, TypeError, base64.binascii.Error):
         return False
 
