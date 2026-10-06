@@ -1,8 +1,7 @@
 from fastapi import FastAPI
-from sqlalchemy import text
+from fastapi.middleware.cors import CORSMiddleware
 
 from app.core.config import settings
-from app.db.session import engine
 
 from app.api.v1.auth import router as auth_router
 from app.api.v1.organizations import router as organizations_router
@@ -13,6 +12,19 @@ from app.api.v1.projects import router as projects_router
 app = FastAPI(
     title=settings.APP_NAME,
     version=settings.APP_VERSION,
+)
+
+# CORS – allow React frontend
+app.add_middleware(
+    CORSMiddleware,
+    allow_origins=[
+        "http://localhost:5173",
+        "http://127.0.0.1:5173",
+        settings.FRONTEND_URL,
+    ],
+    allow_credentials=True,
+    allow_methods=["*"],
+    allow_headers=["*"],
 )
 
 app.include_router(auth_router, prefix="/api/v1")
@@ -27,4 +39,3 @@ def health_check():
         "status": "ok",
         "application": settings.APP_NAME,
     }
-

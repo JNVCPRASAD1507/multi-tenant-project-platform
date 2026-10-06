@@ -358,3 +358,174 @@ def logout_user(
     db.commit()
     
     
+
+#=========================================================================
+# GitHub OAuth
+#=========================================================================
+
+import httpx
+from app.models.oauth_account import OAuthAccount
+from app.core.config import settings
+
+
+async def exchange_github_code(code: str) -> dict:
+    """Exchange authorization code for GitHub access token + user info."""
+    async with httpx.AsyncClient() as client:
+        # 1. Exchange code for access token
+        token_resp = await client.post(
+            "https://github.com/login/oauth/access_token",
+            headers={"Accept": "application/json"},
+            data={
+                "client_id": settings.GITHUB_CLIENT_ID,
+                "client_secret": settings.GITHUB_CLIENT_SECRET,
+                "code": code,
+                "redirect_uri": settings.GITHUB_REDIRECT_URI,
+            },
+        )
+        token_data = token_resp.json()
+        if "access_token" not in token_data:
+            raise ValueError(
+                token_data.get("error_description")
+                or token_data.get("error")
+                or "Failed to obtain GitHub access token"
+            )
+
+        gh_token = token_data["access_token"]
+
+        # 2. Fetch user profile
+        user_resp = await client.get(
+            "https://api.github.com/user",
+            headers={
+                "Authorization": f"Bearer {gh_token}",
+                "Accept": "application/vnd.github+json",
+            },
+        )
+        if user_resp.status_code != 200:
+            raise ValueError("Failed to fetch GitHub user profile")
+
+        gh_user = user_resp.json()
+
+        # 3. Fetch primary email if not public
+        email = gh_user.get("email")
+        if not email:
+            emails_resp = await client.get(
+                "https://api.github.com/user/emails",
+                headers={
+                    "Authorization": f"Bearer {gh_token}",
+                    "Accept": "application/vnd.github+json",
+                },
+            )
+            if emails_resp.status_code == 200:
+                for e in emails_resp.json():
+                    if e.get("primary") and e.get("verified"):
+                        email = e["email"]
+                        break
+                if not email and emails_resp.json():
+                    email = emails_resp.json()[0]["email"]
+
+        if not email:
+            raise ValueError(
+                "GitHub account has no accessible email. "
+                "Make sure your email is public or grant the user:email scope."
+            )
+
+        return {
+            "provider_user_id": str(gh_user["id"]),
+            "email": email.lower(),
+            "full_name": gh_user.get("name") or gh_user.get("login") or email,
+            "login": gh_user.get("login"),
+            "avatar_url": gh_user.get("avatar_url"),
+        }
+
+
+def login_or_register_github_user(
+    db: Session,
+    github_data: dict,
+) -> tuple[User, Organization | None, Role | None, str, str]:
+    """
+    Find or create user from GitHub data.
+    Returns (user, organization, role, access_token, refresh_token)
+    """
+    provider = "github"
+    provider_user_id = github_data["provider_user_id"]
+    email = github_data["email"]
+
+    # 1. Look for existing OAuth link
+    oauth = db.scalar(
+        select(OAuthAccount).where(
+            OAuthAccount.provider == provider,
+            OAuthAccount.provider_user_id == provider_user_id,
+        )
+    )
+
+    if oauth:
+        user = db.get(User, oauth.user_id)
+        if not user or not user.is_active:
+            raise PermissionError("User account is inactive.")
+    else:
+        # 2. Look for existing user by email
+        user = db.scalar(select(User).where(User.email == email))
+        if user is None:
+            # Create new user (no password)
+            user = User(
+                email=email,
+                password_hash=None,
+                full_name=github_data["full_name"][:150],
+                is_active=True,
+                is_verified=True,
+            )
+            db.add(user)
+            db.flush()
+
+        # Link OAuth account
+        oauth = OAuthAccount(
+            user_id=user.id,
+            provider=provider,
+            provider_user_id=provider_user_id,
+            email=email,
+        )
+        db.add(oauth)
+        db.commit()
+        db.refresh(user)
+
+    if not user.is_active:
+        raise PermissionError("User account is inactive.")
+
+    # Find primary membership (first active org)
+    membership = db.scalar(
+        select(OrganizationMember)
+        .where(
+            OrganizationMember.user_id == user.id,
+            OrganizationMember.is_active == True,  # noqa: E712
+        )
+        .limit(1)
+    )
+
+    organization = None
+    role = None
+    organization_id = None
+    role_name = None
+
+    if membership:
+        organization = db.get(Organization, membership.organization_id)
+        role = db.get(Role, membership.role_id)
+        organization_id = membership.organization_id
+        role_name = role.name if role else None
+
+    access_token = create_access_token(
+        user_id=user.id,
+        organization_id=organization_id,
+        role=role_name,
+    )
+    refresh_token = create_refresh_token()
+
+    db.add(
+        RefreshToken(
+            user_id=user.id,
+            token_hash=hash_refresh_token(refresh_token),
+            expires_at=get_refresh_token_expiry(),
+        )
+    )
+    db.commit()
+
+    return user, organization, role, access_token, refresh_token
