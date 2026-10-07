@@ -1,5 +1,9 @@
 import { useState } from 'react'
-import { Link, useNavigate, useSearchParams } from 'react-router-dom'
+import { Link as RouterLink, useNavigate, useSearchParams } from 'react-router-dom'
+import {
+  Box, Card, CardContent, TextField, Button, Typography, Alert, Divider, Link,
+} from '@mui/material'
+import GitHubIcon from '@mui/icons-material/GitHub'
 import api from '../api'
 import { useAuthStore } from '../store'
 
@@ -24,36 +28,64 @@ export default function Login() {
       setAuth(data.user, data.tokens.access_token, data.tokens.refresh_token)
       navigate('/')
     } catch (err) {
-      setError(err.response?.data?.detail?.message || err.response?.data?.detail || 'Login failed')
+      setError(
+        err.response?.data?.detail?.message ||
+        err.response?.data?.detail ||
+        'Login failed'
+      )
     } finally {
       setLoading(false)
     }
   }
 
   return (
-    <div className="container" style={{ maxWidth: 420, marginTop: '4rem' }}>
-      <div className="card">
-        <h1 style={{ marginBottom: '1.5rem' }}>Sign in</h1>
-        {(error || oauthError) && <p className="error">{error || oauthError}</p>}
-        <form onSubmit={handleSubmit}>
-          <label>Email</label>
-          <input type="email" value={email} onChange={(e) => setEmail(e.target.value)} required />
-          <label>Password</label>
-          <input type="password" value={password} onChange={(e) => setPassword(e.target.value)} required />
-          <button type="submit" disabled={loading} style={{ width: '100%', marginTop: '0.5rem' }}>
-            {loading ? 'Signing in…' : 'Sign in'}
-          </button>
-        </form>
-        <div style={{ margin: '1.5rem 0', textAlign: 'center', color: '#94a3b8' }}>or</div>
-        <a href={`${API_URL}/api/v1/auth/github/login`} style={{ display: 'block' }}>
-          <button type="button" className="btn-github" style={{ width: '100%' }}>
+    <Box minHeight="100vh" display="flex" alignItems="center" justifyContent="center" p={2}>
+      <Card sx={{ width: '100%', maxWidth: 420 }}>
+        <CardContent sx={{ p: 4 }}>
+          <Typography variant="h5" fontWeight={700} gutterBottom>
+            Sign in
+          </Typography>
+          <Typography variant="body2" color="text.secondary" mb={3}>
+            Multi-Tenant Project Platform
+          </Typography>
+
+          {(error || oauthError) && (
+            <Alert severity="error" sx={{ mb: 2 }}>{error || oauthError}</Alert>
+          )}
+
+          <Box component="form" onSubmit={handleSubmit}>
+            <TextField
+              fullWidth label="Email" type="email" margin="normal"
+              value={email} onChange={(e) => setEmail(e.target.value)} required
+            />
+            <TextField
+              fullWidth label="Password" type="password" margin="normal"
+              value={password} onChange={(e) => setPassword(e.target.value)} required
+            />
+            <Button
+              fullWidth type="submit" variant="contained" size="large"
+              disabled={loading} sx={{ mt: 2 }}
+            >
+              {loading ? 'Signing in…' : 'Sign in'}
+            </Button>
+          </Box>
+
+          <Divider sx={{ my: 3 }}>or</Divider>
+
+          <Button
+            fullWidth variant="outlined" size="large"
+            startIcon={<GitHubIcon />}
+            href={`${API_URL}/api/v1/auth/github/login`}
+          >
             Continue with GitHub
-          </button>
-        </a>
-        <p style={{ marginTop: '1.5rem', textAlign: 'center' }}>
-          No account? <Link to="/register">Register</Link>
-        </p>
-      </div>
-    </div>
+          </Button>
+
+          <Typography variant="body2" textAlign="center" mt={3}>
+            No account?{' '}
+            <Link component={RouterLink} to="/register">Register</Link>
+          </Typography>
+        </CardContent>
+      </Card>
+    </Box>
   )
 }

@@ -1,33 +1,17 @@
-import { Routes, Route, Navigate, Link } from 'react-router-dom'
+import { Routes, Route, Navigate } from 'react-router-dom'
 import { useAuthStore } from './store'
+import AppLayout from './components/AppLayout'
 import Login from './pages/Login'
 import Register from './pages/Register'
 import Dashboard from './pages/Dashboard'
 import AuthCallback from './pages/AuthCallback'
 import Projects from './pages/Projects'
 import TaskBoard from './pages/TaskBoard'
+import Chat from './pages/Chat'
 
 function PrivateRoute({ children }) {
   const token = useAuthStore((s) => s.accessToken)
   return token ? children : <Navigate to="/login" replace />
-}
-
-function Layout({ children }) {
-  const { user, logout } = useAuthStore()
-  return (
-    <>
-      <nav className="nav">
-        <Link to="/">Dashboard</Link>
-        <Link to="/projects">Projects</Link>
-        <Link to="/org/1/project/1/board">Task Board</Link>
-        <div style={{ marginLeft: 'auto', display: 'flex', gap: '1rem', alignItems: 'center' }}>
-          {user && <span>{user.full_name || user.email}</span>}
-          <button className="secondary" onClick={logout}>Logout</button>
-        </div>
-      </nav>
-      <div className="container">{children}</div>
-    </>
-  )
 }
 
 export default function App() {
@@ -38,15 +22,17 @@ export default function App() {
       <Route path="/auth/callback" element={<AuthCallback />} />
 
       <Route path="/" element={
-        <PrivateRoute><Layout><Dashboard /></Layout></PrivateRoute>
+        <PrivateRoute><AppLayout><Dashboard /></AppLayout></PrivateRoute>
       } />
       <Route path="/projects" element={
-        <PrivateRoute><Layout><Projects /></Layout></PrivateRoute>
+        <PrivateRoute><AppLayout><Projects /></AppLayout></PrivateRoute>
       } />
       <Route path="/org/:orgId/project/:projectId/board" element={
-        <PrivateRoute><Layout><TaskBoard /></Layout></PrivateRoute>
+        <PrivateRoute><AppLayout><TaskBoard /></AppLayout></PrivateRoute>
+      } />
+      <Route path="/chat" element={
+        <PrivateRoute><AppLayout><Chat /></AppLayout></PrivateRoute>
       } />
     </Routes>
   )
 }
-

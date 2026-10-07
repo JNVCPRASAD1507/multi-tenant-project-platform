@@ -11,6 +11,7 @@ from app.models.comment import Comment
 from app.models.attachment import Attachment
 from app.models.notification import Notification
 from app.models.audit_log import AuditLog
+from app.models.chat import ChatRoom, ChatParticipant, ChatMessage
 
 __all__ = [
     "User",
@@ -27,4 +28,7 @@ __all__ = [
     "Attachment",
     "Notification",
     "AuditLog",
+    "ChatRoom",
+    "ChatParticipant",
+    "ChatMessage",
 ]

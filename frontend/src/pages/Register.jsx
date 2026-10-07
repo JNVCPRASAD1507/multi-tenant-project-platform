@@ -1,5 +1,8 @@
 import { useState } from 'react'
-import { Link, useNavigate } from 'react-router-dom'
+import { Link as RouterLink, useNavigate } from 'react-router-dom'
+import {
+  Box, Card, CardContent, TextField, Button, Typography, Alert, Link,
+} from '@mui/material'
 import api from '../api'
 import { useAuthStore } from '../store'
 
@@ -19,43 +22,58 @@ export default function Register() {
     setError('')
     setLoading(true)
     try {
-      const { data } = await api.post('/auth/register', form)
-      // After register, auto-login
+      await api.post('/auth/register', form)
       const loginRes = await api.post('/auth/login', {
         email: form.email,
         password: form.password,
       })
-      setAuth(loginRes.data.user, loginRes.data.tokens.access_token, loginRes.data.tokens.refresh_token)
+      setAuth(
+        loginRes.data.user,
+        loginRes.data.tokens.access_token,
+        loginRes.data.tokens.refresh_token
+      )
       navigate('/')
     } catch (err) {
-      setError(err.response?.data?.detail?.message || err.response?.data?.detail || 'Registration failed')
+      setError(
+        err.response?.data?.detail?.message ||
+        err.response?.data?.detail ||
+        'Registration failed'
+      )
     } finally {
       setLoading(false)
     }
   }
 
   return (
-    <div className="container" style={{ maxWidth: 420, marginTop: '3rem' }}>
-      <div className="card">
-        <h1 style={{ marginBottom: '1.5rem' }}>Create account</h1>
-        {error && <p className="error">{error}</p>}
-        <form onSubmit={handleSubmit}>
-          <label>Full name</label>
-          <input name="full_name" value={form.full_name} onChange={handleChange} required />
-          <label>Email</label>
-          <input type="email" name="email" value={form.email} onChange={handleChange} required />
-          <label>Password</label>
-          <input type="password" name="password" value={form.password} onChange={handleChange} required minLength={8} />
-          <label>Organization name</label>
-          <input name="organization_name" value={form.organization_name} onChange={handleChange} required />
-          <button type="submit" disabled={loading} style={{ width: '100%', marginTop: '0.5rem' }}>
-            {loading ? 'Creating…' : 'Register'}
-          </button>
-        </form>
-        <p style={{ marginTop: '1.5rem', textAlign: 'center' }}>
-          Already have an account? <Link to="/login">Sign in</Link>
-        </p>
-      </div>
-    </div>
+    <Box minHeight="100vh" display="flex" alignItems="center" justifyContent="center" p={2}>
+      <Card sx={{ width: '100%', maxWidth: 420 }}>
+        <CardContent sx={{ p: 4 }}>
+          <Typography variant="h5" fontWeight={700} gutterBottom>
+            Create account
+          </Typography>
+          {error && <Alert severity="error" sx={{ mb: 2 }}>{error}</Alert>}
+
+          <Box component="form" onSubmit={handleSubmit}>
+            <TextField fullWidth label="Full name" name="full_name" margin="normal"
+              value={form.full_name} onChange={handleChange} required />
+            <TextField fullWidth label="Email" name="email" type="email" margin="normal"
+              value={form.email} onChange={handleChange} required />
+            <TextField fullWidth label="Password" name="password" type="password" margin="normal"
+              value={form.password} onChange={handleChange} required inputProps={{ minLength: 8 }} />
+            <TextField fullWidth label="Organization name" name="organization_name" margin="normal"
+              value={form.organization_name} onChange={handleChange} required />
+            <Button fullWidth type="submit" variant="contained" size="large"
+              disabled={loading} sx={{ mt: 2 }}>
+              {loading ? 'Creating…' : 'Register'}
+            </Button>
+          </Box>
+
+          <Typography variant="body2" textAlign="center" mt={3}>
+            Already have an account?{' '}
+            <Link component={RouterLink} to="/login">Sign in</Link>
+          </Typography>
+        </CardContent>
+      </Card>
+    </Box>
   )
 }
