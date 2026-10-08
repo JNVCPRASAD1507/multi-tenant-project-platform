@@ -1,8 +1,12 @@
+
 from fastapi import APIRouter, Depends, HTTPException, Query, status
+from sqlalchemy import select
 from sqlalchemy.orm import Session
 
 from app.api.deps import get_current_user, get_db
 from app.models.user import User
+from app.models.chat import ChatParticipant
+
 from app.schemas.chat import (
     ChatRoomCreate,
     ChatRoomResponse,
@@ -11,6 +15,7 @@ from app.schemas.chat import (
     ChatMessageResponse,
     ChatMessageListResponse,
 )
+
 from app.services.chat_service import (
     ChatServiceError,
     get_or_create_direct_room,
@@ -18,6 +23,14 @@ from app.services.chat_service import (
     list_messages,
     send_message,
     search_users_for_chat,
+)
+
+from app.services.notification_service import (
+    create_notification,
+)
+
+from app.services.notification_broadcast import (
+    publish_notification,
 )
 
 router = APIRouter(prefix="/chat", tags=["Chat"])
@@ -95,25 +108,109 @@ def get_messages(
         _err(e)
 
 
-@router.post("/rooms/{room_id}/messages", response_model=ChatMessageResponse, status_code=201)
-def post_message(
+@router.post(
+    "/rooms/{room_id}/messages",
+    response_model=ChatMessageResponse,
+    status_code=201,
+)
+async def post_message(
     room_id: int,
     data: ChatMessageCreate,
     db: Session = Depends(get_db),
     current_user: User = Depends(get_current_user),
 ):
+    """
+    Send a chat message.
+
+    Flow:
+
+        1. Save message to PostgreSQL.
+        2. Publish chat event to Redis.
+        3. Find other chat participant.
+        4. Create notification in PostgreSQL.
+        5. Publish notification to Redis.
+        6. Notification WebSocket delivers it instantly.
+    """
+
     try:
+
+        # -------------------------------------------------
+        # 1. Save chat message
+        # -------------------------------------------------
+
         msg = send_message(
-            db, room_id=room_id, sender_id=current_user.id, body=data.body
+            db,
+            room_id=room_id,
+            sender_id=current_user.id,
+            body=data.body,
         )
-        # Broadcast via WebSocket manager if available
-        try:
-            from app.api.v1.ws import manager
-            import asyncio
-            # Fire-and-forget broadcast to room participants would go here
-            # For simplicity we rely on client polling / WS ping for now
-        except Exception:
-            pass
+
+        # -------------------------------------------------
+        # 2. Publish chat message
+        # -------------------------------------------------
+
+        from app.services.chat_broadcast import (
+            publish_chat_message,
+        )
+
+        await publish_chat_message(
+            room_id,
+            msg,
+        )
+
+        # -------------------------------------------------
+        # 3. Find other participant
+        # -------------------------------------------------
+
+        participants = db.scalars(
+            select(ChatParticipant).where(
+                ChatParticipant.room_id == room_id,
+                ChatParticipant.user_id != current_user.id,
+            )
+        ).all()
+
+        # -------------------------------------------------
+        # 4. Create notification for each participant
+        # -------------------------------------------------
+
+        for participant in participants:
+
+            notification = create_notification(
+                db,
+                user_id=participant.user_id,
+                organization_id=None,
+                notification_type="chat_message",
+                title=f"New message from {current_user.full_name}",
+                message=data.body,
+                entity_type="chat_room",
+                entity_id=room_id,
+            )
+
+            # -------------------------------------------------
+            # 5. Publish notification to Redis
+            # -------------------------------------------------
+
+            await publish_notification(
+                participant.user_id,
+                {
+                    "id": notification.id,
+                    "user_id": notification.user_id,
+                    "organization_id": notification.organization_id,
+                    "type": notification.type,
+                    "title": notification.title,
+                    "message": notification.message,
+                    "entity_type": notification.entity_type,
+                    "entity_id": notification.entity_id,
+                    "is_read": notification.is_read,
+                    "created_at": notification.created_at.isoformat(),
+                },
+            )
+
         return msg
+
     except ChatServiceError as e:
+
         _err(e)
+        
+        
+        

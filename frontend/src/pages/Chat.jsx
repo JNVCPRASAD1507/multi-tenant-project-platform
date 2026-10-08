@@ -1,148 +1,236 @@
-import { useEffect, useState, useRef, useCallback } from 'react'
+import { useEffect, useState, useRef, useCallback } from "react";
 import {
-  Box, Card, CardContent, Typography, TextField, Button, List, ListItemButton,
-  ListItemText, Avatar, Divider, InputAdornment, CircularProgress, Chip,
-} from '@mui/material'
-import SendIcon from '@mui/icons-material/Send'
-import SearchIcon from '@mui/icons-material/Search'
-import api from '../api'
-import { useAuthStore } from '../store'
+  Box,
+  Card,
+  CardContent,
+  Typography,
+  TextField,
+  Button,
+  List,
+  ListItemButton,
+  ListItemText,
+  Avatar,
+  Divider,
+  InputAdornment,
+  CircularProgress,
+  Chip,
+} from "@mui/material";
+import SendIcon from "@mui/icons-material/Send";
+import SearchIcon from "@mui/icons-material/Search";
+import api from "../api";
+import { useAuthStore } from "../store";
 
 export default function Chat() {
-  const token = useAuthStore((s) => s.accessToken)
-  const currentUser = useAuthStore((s) => s.user)
+  const token = useAuthStore((s) => s.accessToken);
+  const currentUser = useAuthStore((s) => s.user);
 
-  const [rooms, setRooms] = useState([])
-  const [activeRoom, setActiveRoom] = useState(null)
-  const [messages, setMessages] = useState([])
-  const [body, setBody] = useState('')
-  const [search, setSearch] = useState('')
-  const [searchResults, setSearchResults] = useState([])
-  const [loading, setLoading] = useState(true)
-  const [sending, setSending] = useState(false)
-  const messagesEndRef = useRef(null)
-  const wsRef = useRef(null)
+  const [rooms, setRooms] = useState([]);
+  const [activeRoom, setActiveRoom] = useState(null);
+  const [messages, setMessages] = useState([]);
+  const [body, setBody] = useState("");
+  const [search, setSearch] = useState("");
+  const [searchResults, setSearchResults] = useState([]);
+  const [loading, setLoading] = useState(true);
+  const [sending, setSending] = useState(false);
+  const messagesEndRef = useRef(null);
+  const wsRef = useRef(null);
+
+  const API_URL = import.meta.env.VITE_API_URL || "http://localhost:8000";
+
+  const WS_URL = API_URL.replace(/^http:/, "ws:").replace(/^https:/, "wss:");
 
   const loadRooms = useCallback(async () => {
     try {
-      const { data } = await api.get('/chat/rooms')
-      setRooms(data.items || [])
+      const { data } = await api.get("/chat/rooms");
+      setRooms(data.items || []);
     } catch (e) {
-      console.error(e)
+      console.error(e);
     } finally {
-      setLoading(false)
+      setLoading(false);
     }
-  }, [])
+  }, []);
 
   useEffect(() => {
-    loadRooms()
-  }, [loadRooms])
+    loadRooms();
+  }, [loadRooms]);
 
   const loadMessages = async (roomId) => {
     try {
-      const { data } = await api.get(`/chat/rooms/${roomId}/messages`)
-      setMessages(data.items || [])
-      setTimeout(() => messagesEndRef.current?.scrollIntoView({ behavior: 'smooth' }), 50)
+      const { data } = await api.get(`/chat/rooms/${roomId}/messages`);
+      setMessages(data.items || []);
+      setTimeout(
+        () => messagesEndRef.current?.scrollIntoView({ behavior: "smooth" }),
+        50,
+      );
     } catch (e) {
-      console.error(e)
+      console.error(e);
     }
-  }
+  };
 
-  const openRoom = (room) => {
-    setActiveRoom(room)
-    loadMessages(room.id)
-    // Connect room WebSocket
-    if (wsRef.current) wsRef.current.close()
-    if (!token) return
+  const openRoom = async (room) => {
+    setActiveRoom(room);
+
+    await loadMessages(room.id);
+
+    // Close previous WebSocket
+    if (wsRef.current) {
+      wsRef.current.close();
+      wsRef.current = null;
+    }
+
+    if (!token) {
+      return;
+    }
+
     const ws = new WebSocket(
-      `ws://127.0.0.1:8000/api/v1/ws/chat/${room.id}?token=${token}`
-    )
+      `${WS_URL}/api/v1/ws/chat/${room.id}?token=${token}`,
+    );
+
+    ws.onopen = () => {
+      console.log(`Chat WebSocket connected: room ${room.id}`);
+    };
+
     ws.onmessage = (event) => {
       try {
-        const msg = JSON.parse(event.data)
-        if (msg.type === 'chat_message') {
-          setMessages((prev) => [...prev, msg])
-          setTimeout(() => messagesEndRef.current?.scrollIntoView({ behavior: 'smooth' }), 50)
+        const msg = JSON.parse(event.data);
+
+        if (msg.type === "chat_message") {
+          setMessages((prev) => {
+            // Prevent duplicate messages
+            const alreadyExists = prev.some((item) => item.id === msg.id);
+
+            if (alreadyExists) {
+              return prev;
+            }
+
+            return [...prev, msg];
+          });
+
+          setTimeout(() => {
+            messagesEndRef.current?.scrollIntoView({
+              behavior: "smooth",
+            });
+          }, 50);
         }
-      } catch {}
-    }
-    wsRef.current = ws
-  }
+      } catch (error) {
+        console.error("Failed to process WebSocket message:", error);
+      }
+    };
+
+    ws.onerror = (error) => {
+      console.error("Chat WebSocket error:", error);
+    };
+
+    ws.onclose = () => {
+      console.log(`Chat WebSocket closed: room ${room.id}`);
+    };
+
+    wsRef.current = ws;
+  };
 
   useEffect(() => {
     return () => {
-      if (wsRef.current) wsRef.current.close()
-    }
-  }, [])
+      if (wsRef.current) wsRef.current.close();
+    };
+  }, []);
 
   const handleSearch = async (q) => {
-    setSearch(q)
+    setSearch(q);
     if (q.trim().length < 2) {
-      setSearchResults([])
-      return
+      setSearchResults([]);
+      return;
     }
     try {
-      const { data } = await api.get(`/chat/users/search?q=${encodeURIComponent(q)}`)
-      setSearchResults(data || [])
+      const { data } = await api.get(
+        `/chat/users/search?q=${encodeURIComponent(q)}`,
+      );
+      setSearchResults(data || []);
     } catch {
-      setSearchResults([])
+      setSearchResults([]);
     }
-  }
+  };
 
   const startChat = async (userId) => {
     try {
-      const { data } = await api.post('/chat/rooms', { participant_user_id: userId })
-      setSearch('')
-      setSearchResults([])
-      await loadRooms()
-      openRoom(data)
+      const { data } = await api.post("/chat/rooms", {
+        participant_user_id: userId,
+      });
+      setSearch("");
+      setSearchResults([]);
+      await loadRooms();
+      openRoom(data);
     } catch (e) {
-      alert(e.response?.data?.detail?.message || 'Could not start chat')
+      alert(e.response?.data?.detail?.message || "Could not start chat");
     }
-  }
+  };
 
   const handleSend = async (e) => {
-    e.preventDefault()
-    if (!body.trim() || !activeRoom) return
-    setSending(true)
+    e.preventDefault();
+
+    const messageBody = body.trim();
+
+    if (!messageBody || !activeRoom) {
+      return;
+    }
+
+    setSending(true);
+
     try {
-      // Prefer WS if connected
       if (wsRef.current && wsRef.current.readyState === WebSocket.OPEN) {
-        wsRef.current.send(JSON.stringify({ body: body.trim() }))
-        setBody('')
+        wsRef.current.send(
+          JSON.stringify({
+            body: messageBody,
+          }),
+        );
+
+        setBody("");
       } else {
-        const { data } = await api.post(`/chat/rooms/${activeRoom.id}/messages`, {
-          body: body.trim(),
-        })
-        setMessages((prev) => [...prev, data])
-        setBody('')
-        setTimeout(() => messagesEndRef.current?.scrollIntoView({ behavior: 'smooth' }), 50)
+        const { data } = await api.post(
+          `/chat/rooms/${activeRoom.id}/messages`,
+          {
+            body: messageBody,
+          },
+        );
+
+        // REST response is already published
+        // through Redis by the backend.
+        //
+        // Don't append manually here because
+        // WebSocket may also deliver it.
+
+        setBody("");
       }
     } catch (err) {
-      alert(err.response?.data?.detail?.message || 'Failed to send')
+      alert(err.response?.data?.detail?.message || "Failed to send");
     } finally {
-      setSending(false)
+      setSending(false);
     }
-  }
+  };
 
   if (loading) {
     return (
       <Box display="flex" justifyContent="center" mt={8}>
         <CircularProgress />
       </Box>
-    )
+    );
   }
 
   return (
     <Box>
-      <Typography variant="h5" gutterBottom>Chat</Typography>
+      <Typography variant="h5" gutterBottom>
+        Chat
+      </Typography>
       <Typography variant="body2" color="text.secondary" mb={2}>
         Message users across organizations. Project data stays isolated.
       </Typography>
 
-      <Box display="flex" gap={2} sx={{ height: 'calc(100vh - 200px)', minHeight: 480 }}>
+      <Box
+        display="flex"
+        gap={2}
+        sx={{ height: "calc(100vh - 200px)", minHeight: 480 }}
+      >
         {/* Sidebar – rooms + search */}
-        <Card sx={{ width: 300, display: 'flex', flexDirection: 'column' }}>
+        <Card sx={{ width: 300, display: "flex", flexDirection: "column" }}>
           <CardContent sx={{ pb: 1 }}>
             <TextField
               fullWidth
@@ -159,7 +247,7 @@ export default function Chat() {
               }}
             />
             {searchResults.length > 0 && (
-              <List dense sx={{ maxHeight: 160, overflow: 'auto', mt: 1 }}>
+              <List dense sx={{ maxHeight: 160, overflow: "auto", mt: 1 }}>
                 {searchResults.map((u) => (
                   <ListItemButton key={u.id} onClick={() => startChat(u.id)}>
                     <Avatar sx={{ width: 28, height: 28, mr: 1, fontSize: 12 }}>
@@ -177,7 +265,7 @@ export default function Chat() {
             )}
           </CardContent>
           <Divider />
-          <List sx={{ flex: 1, overflow: 'auto' }}>
+          <List sx={{ flex: 1, overflow: "auto" }}>
             {rooms.length === 0 && (
               <Typography variant="body2" color="text.secondary" sx={{ p: 2 }}>
                 No conversations yet. Search a user to start.
@@ -189,11 +277,23 @@ export default function Chat() {
                 selected={activeRoom?.id === room.id}
                 onClick={() => openRoom(room)}
               >
-                <Avatar sx={{ width: 32, height: 32, mr: 1.5, bgcolor: 'secondary.main', fontSize: 13 }}>
-                  {(room.other_participant_name || room.name || 'C')[0]}
+                <Avatar
+                  sx={{
+                    width: 32,
+                    height: 32,
+                    mr: 1.5,
+                    bgcolor: "secondary.main",
+                    fontSize: 13,
+                  }}
+                >
+                  {(room.other_participant_name || room.name || "C")[0]}
                 </Avatar>
                 <ListItemText
-                  primary={room.other_participant_name || room.name || `Room #${room.id}`}
+                  primary={
+                    room.other_participant_name ||
+                    room.name ||
+                    `Room #${room.id}`
+                  }
                   primaryTypographyProps={{ fontSize: 14, noWrap: true }}
                 />
               </ListItemButton>
@@ -202,40 +302,58 @@ export default function Chat() {
         </Card>
 
         {/* Messages panel */}
-        <Card sx={{ flex: 1, display: 'flex', flexDirection: 'column' }}>
+        <Card sx={{ flex: 1, display: "flex", flexDirection: "column" }}>
           {!activeRoom ? (
-            <Box flex={1} display="flex" alignItems="center" justifyContent="center">
-              <Typography color="text.secondary">Select a conversation</Typography>
+            <Box
+              flex={1}
+              display="flex"
+              alignItems="center"
+              justifyContent="center"
+            >
+              <Typography color="text.secondary">
+                Select a conversation
+              </Typography>
             </Box>
           ) : (
             <>
-              <Box sx={{ p: 2, borderBottom: '1px solid', borderColor: 'divider' }}>
+              <Box
+                sx={{ p: 2, borderBottom: "1px solid", borderColor: "divider" }}
+              >
                 <Typography fontWeight={600}>
-                  {activeRoom.other_participant_name || activeRoom.name || `Room #${activeRoom.id}`}
+                  {activeRoom.other_participant_name ||
+                    activeRoom.name ||
+                    `Room #${activeRoom.id}`}
                 </Typography>
-                <Chip label="Cross-org" size="small" color="secondary" sx={{ mt: 0.5 }} />
+                <Chip
+                  label="Cross-org"
+                  size="small"
+                  color="secondary"
+                  sx={{ mt: 0.5 }}
+                />
               </Box>
 
-              <Box sx={{ flex: 1, overflow: 'auto', p: 2 }}>
+              <Box sx={{ flex: 1, overflow: "auto", p: 2 }}>
                 {messages.map((m) => {
-                  const isMine = m.sender_id === currentUser?.id
+                  const isMine = m.sender_id === currentUser?.id;
                   return (
                     <Box
                       key={m.id}
                       sx={{
-                        display: 'flex',
-                        justifyContent: isMine ? 'flex-end' : 'flex-start',
+                        display: "flex",
+                        justifyContent: isMine ? "flex-end" : "flex-start",
                         mb: 1.5,
                       }}
                     >
                       <Box
                         sx={{
-                          maxWidth: '70%',
+                          maxWidth: "70%",
                           px: 1.5,
                           py: 1,
                           borderRadius: 2,
-                          bgcolor: isMine ? 'primary.main' : 'background.default',
-                          border: isMine ? 'none' : '1px solid #334155',
+                          bgcolor: isMine
+                            ? "primary.main"
+                            : "background.default",
+                          border: isMine ? "none" : "1px solid #334155",
                         }}
                       >
                         {!isMine && (
@@ -244,12 +362,16 @@ export default function Chat() {
                           </Typography>
                         )}
                         <Typography variant="body2">{m.body}</Typography>
-                        <Typography variant="caption" color="text.secondary" sx={{ display: 'block', mt: 0.3 }}>
+                        <Typography
+                          variant="caption"
+                          color="text.secondary"
+                          sx={{ display: "block", mt: 0.3 }}
+                        >
                           {new Date(m.created_at).toLocaleTimeString()}
                         </Typography>
                       </Box>
                     </Box>
-                  )
+                  );
                 })}
                 <div ref={messagesEndRef} />
               </Box>
@@ -257,7 +379,13 @@ export default function Chat() {
               <Box
                 component="form"
                 onSubmit={handleSend}
-                sx={{ p: 2, borderTop: '1px solid', borderColor: 'divider', display: 'flex', gap: 1 }}
+                sx={{
+                  p: 2,
+                  borderTop: "1px solid",
+                  borderColor: "divider",
+                  display: "flex",
+                  gap: 1,
+                }}
               >
                 <TextField
                   fullWidth
@@ -281,5 +409,5 @@ export default function Chat() {
         </Card>
       </Box>
     </Box>
-  )
+  );
 }
