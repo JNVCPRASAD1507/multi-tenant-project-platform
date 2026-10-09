@@ -22,7 +22,7 @@ Your original 30% (auth, orgs, members, projects, permissions) has been extended
 
 ---
 
-## 1. GitHub OAuth Setup (you already have Client ID & Secret)
+## 1. GitHub OAuth Setup (For Client ID & Secret)
 
 1. Go to https://github.com/settings/developers → OAuth Apps
 2. Authorization callback URL **must** be:
@@ -224,4 +224,4 @@ open http://localhost:8000/docs
 
 ## License
 
-Private until the assignment is complete (as requested).
+Private until the assignment is complete.
